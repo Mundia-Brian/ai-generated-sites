@@ -1,0 +1,53 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - main
+      - 'site/**'
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false   # never cancel a deploy mid-flight
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1   # shallow clone — faster for large generated sites repos
+
+      - name: Resolve deploy directory
+        id: ctx
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          if [[ "$BRANCH" == site/* ]]; then
+            SLUG="${BRANCH#site/}"
+            DIR="sites/${SLUG}"
+            if [ ! -d "$DIR" ]; then
+              echo "ERROR: Expected directory $DIR not found" >&2
+              exit 1
+            fi
+            echo "dir=$DIR"      >> $GITHUB_OUTPUT
+            echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          else
+            echo "dir=."          >> $GITHUB_OUTPUT
+            echo "branch=main"    >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:      ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId:     ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName:   web-designs-online
+          directory:     ${{ steps.ctx.outputs.dir }}
+          branch:        ${{ steps.ctx.outputs.branch }}
+          gitHubToken:   ${{ secrets.GITHUB_TOKEN }}
+          wranglerVersion: '3'
